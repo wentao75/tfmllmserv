@@ -1,6 +1,7 @@
 from typing import Dict, Optional, List, Tuple
 import torch
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoProcessor
+from janus.models import MultiModalityCausalLM, VLChatProcessor
 import json
 import os
 import logging
@@ -68,18 +69,35 @@ class ModelManager:
         # 检测设备
         device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         
-        # 加载模型
-        model = AutoModelForCausalLM.from_pretrained(
-            self.models[model_id]["model_id"],
-            trust_remote_code=True,
-            torch_dtype=torch.float16,
-            device_map=device,
-            local_files_only=True
-        )
-        
-        # 如果是多模态模型，加载处理器
-        if "InternVL" in model_id:
-            logger.info("检测到多模态模型，加载处理器")
+        # 根据模型类型选择不同的加载方式
+        if "Janus" in model_id:
+            logger.info("检测到 Janus 模型，使用专用加载器...")
+            # 加载处理器
+            processor = VLChatProcessor.from_pretrained(
+                self.models[model_id]["model_id"],
+                trust_remote_code=True
+            )
+            
+            # 加载模型
+            model: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
+                self.models[model_id]["model_id"],
+                trust_remote_code=True,
+                local_files_only=True
+            )
+            model = model.to(torch.bfloat16).to(device).eval()
+            model.processor = processor
+            model.tokenizer = processor.tokenizer
+            
+        elif "InternVL" in model_id:
+            logger.info("检测到 InternVL 模型，加载处理器")
+            model = AutoModelForCausalLM.from_pretrained(
+                self.models[model_id]["model_id"],
+                trust_remote_code=True,
+                torch_dtype=torch.float16,
+                device_map=device,
+                local_files_only=True
+            )
+            
             processor = AutoProcessor.from_pretrained(
                 self.models[model_id]["model_id"],
                 trust_remote_code=True,
@@ -90,6 +108,16 @@ class ModelManager:
             # 设置图像上下文token
             model.img_context_token_id = 32001  # InternVL2的默认值
             logger.info(f"设置图像上下文token: {model.img_context_token_id}")
+            
+        else:
+            # 普通模型加载
+            model = AutoModelForCausalLM.from_pretrained(
+                self.models[model_id]["model_id"],
+                trust_remote_code=True,
+                torch_dtype=torch.float16,
+                device_map=device,
+                local_files_only=True
+            )
         
         self.loaded_models[model_id] = model
         logger.info(f"模型加载完成: {model_id}")

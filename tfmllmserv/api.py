@@ -16,6 +16,7 @@ import torchvision.transforms as T
 from torchvision.transforms.functional import InterpolationMode
 import time
 import re
+from janus.utils.io import load_pil_images
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +69,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
+    model: str
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = 2048
 
@@ -96,6 +98,7 @@ async def chat_completions(request: ChatRequest):
         # 处理消息
         messages = request.messages
         last_message = messages[-1]
+        model_id = request.model  # 从请求中获取模型 ID
         
         # 构建对话历史，同时保存历史图片
         conversation_history = []
@@ -261,7 +264,6 @@ async def chat_completions(request: ChatRequest):
                 
         # 如果不是特殊格式，加载模型处理请求
         logger.info("准备加载模型处理请求")
-        model_id = "OpenGVLab/InternVL2-2B"
         model = model_manager.get_model(model_id)
         if model is None:
             model = model_manager.load_model(model_id)
@@ -310,74 +312,160 @@ async def chat_completions(request: ChatRequest):
                 # 使用最后一张图片（可能是当前消息的图片或历史消息的最后一张图片）
                 image_tensor = images[-1].to(device).to(torch.float16)
                 
-                # 构建输入
-                if "<image>" not in text:
-                    text = "<image>\n" + text
-                
-                # 添加对话历史到文本中
-                if conversation_history:
-                    history_text = "\n".join([
-                        f"{msg['role']}: {msg['content']}"
-                        for msg in conversation_history
-                    ])
-                    text = f"{history_text}\n{text}"
-                    logger.info("已添加对话历史到请求中")
-                
-                # 生成配置
-                generation_config = {
-                    "max_new_tokens": min(request.max_tokens or 2048, 512),
-                    "do_sample": True,
-                    "temperature": request.temperature or 0.7,
-                    "top_p": 0.9
-                }
-                
-                # 生成回复
-                response_text = model.chat(
-                    model.processor,
-                    pixel_values=image_tensor,
-                    question=text,
-                    generation_config=generation_config
-                )
+                # 根据模型类型选择不同的处理方式
+                if "Janus" in model_id:
+                    logger.info("使用 Janus 模型处理请求")
+                    # 将 tensor 转换回 PIL 图像
+                    transform = T.ToPILImage()
+                    pil_image = transform(image_tensor[0].cpu())
+                    
+                    # 准备对话格式
+                    conversation = [
+                        {
+                            "role": "<|User|>",
+                            "content": f"<image_placeholder>\n{text}",
+                            "images": [pil_image],
+                        },
+                        {"role": "<|Assistant|>", "content": ""},
+                    ]
+                    
+                    # 准备输入
+                    prepare_inputs = model.processor(
+                        conversations=conversation,
+                        images=[pil_image],  # 直接使用 PIL 图像
+                        force_batchify=True
+                    ).to(model.device)
+                    
+                    # 生成图像嵌入
+                    inputs_embeds = model.prepare_inputs_embeds(**prepare_inputs)
+                    
+                    # 生成回答
+                    outputs = model.language_model.generate(
+                        inputs_embeds=inputs_embeds,
+                        attention_mask=prepare_inputs.attention_mask,
+                        pad_token_id=model.tokenizer.eos_token_id,
+                        bos_token_id=model.tokenizer.bos_token_id,
+                        eos_token_id=model.tokenizer.eos_token_id,
+                        max_new_tokens=min(request.max_tokens or 2048, 512),
+                        do_sample=request.temperature > 0,
+                        temperature=request.temperature or 0.7,
+                        use_cache=True,
+                    )
+                    
+                    # 解码回答
+                    response_text = model.tokenizer.decode(
+                        outputs[0].cpu().tolist(), 
+                        skip_special_tokens=True
+                    )
+                else:
+                    # 构建输入
+                    if "<image>" not in text:
+                        text = "<image>\n" + text
+                    
+                    # 添加对话历史到文本中
+                    if conversation_history:
+                        history_text = "\n".join([
+                            f"{msg['role']}: {msg['content']}"
+                            for msg in conversation_history
+                        ])
+                        text = f"{history_text}\n{text}"
+                        logger.info("已添加对话历史到请求中")
+                    
+                    # 生成配置
+                    generation_config = {
+                        "max_new_tokens": min(request.max_tokens or 2048, 512),
+                        "do_sample": True,
+                        "temperature": request.temperature or 0.7,
+                        "top_p": 0.9
+                    }
+                    
+                    # 生成回复
+                    response_text = model.chat(
+                        model.processor,
+                        pixel_values=image_tensor,
+                        question=text,
+                        generation_config=generation_config
+                    )
                 logger.info("图文请求处理完成")
             else:
                 logger.info("处理纯文本请求")
                 # 纯文本处理
-                generation_config = {
-                    "max_new_tokens": min(request.max_tokens or 2048, 512),
-                    "do_sample": True,
-                    "temperature": request.temperature or 0.7,
-                    "top_p": 0.9
-                }
-                
-                # 添加对话历史到文本中
-                if conversation_history:
-                    history_text = "\n".join([
-                        f"{msg['role']}: {msg['content']}"
-                        for msg in conversation_history
-                    ])
-                    text = f"{history_text}\n{text}"
-                    logger.info("已添加对话历史到请求中")
-                
-                # 对于纯文本对话，使用generate方法
-                text_inputs = model.processor(
-                    text,
-                    return_tensors="pt",
-                    padding=True
-                ).to(next(model.parameters()).device)
-                
-                outputs = model.generate(
-                    **text_inputs,
-                    **generation_config
-                )
-                
-                response_text = model.processor.decode(
-                    outputs[0],
-                    skip_special_tokens=True
-                )
-                
-                # 如果是搜索查询格式，包装响应
-                if has_search_format:
-                    response_text = f'{{ "text": "{response_text}" }}'
+                if "Janus" in model_id:
+                    # 准备对话格式
+                    conversation = [
+                        {
+                            "role": "<|User|>",
+                            "content": text,
+                            "images": [],
+                        },
+                        {"role": "<|Assistant|>", "content": ""},
+                    ]
+                    
+                    # 准备输入
+                    prepare_inputs = model.processor(
+                        conversations=conversation,
+                        images=[],
+                        force_batchify=True
+                    ).to(model.device)
+                    
+                    # 生成图像嵌入
+                    inputs_embeds = model.prepare_inputs_embeds(**prepare_inputs)
+                    
+                    # 生成回答
+                    outputs = model.language_model.generate(
+                        inputs_embeds=inputs_embeds,
+                        attention_mask=prepare_inputs.attention_mask,
+                        pad_token_id=model.tokenizer.eos_token_id,
+                        bos_token_id=model.tokenizer.bos_token_id,
+                        eos_token_id=model.tokenizer.eos_token_id,
+                        max_new_tokens=min(request.max_tokens or 2048, 512),
+                        do_sample=request.temperature > 0,
+                        temperature=request.temperature or 0.7,
+                        use_cache=True,
+                    )
+                    
+                    # 解码回答
+                    response_text = model.tokenizer.decode(
+                        outputs[0].cpu().tolist(), 
+                        skip_special_tokens=True
+                    )
+                else:
+                    generation_config = {
+                        "max_new_tokens": min(request.max_tokens or 2048, 512),
+                        "do_sample": True,
+                        "temperature": request.temperature or 0.7,
+                        "top_p": 0.9
+                    }
+                    
+                    # 添加对话历史到文本中
+                    if conversation_history:
+                        history_text = "\n".join([
+                            f"{msg['role']}: {msg['content']}"
+                            for msg in conversation_history
+                        ])
+                        text = f"{history_text}\n{text}"
+                        logger.info("已添加对话历史到请求中")
+                    
+                    # 对于纯文本对话，使用generate方法
+                    text_inputs = model.processor(
+                        text,
+                        return_tensors="pt",
+                        padding=True
+                    ).to(next(model.parameters()).device)
+                    
+                    outputs = model.generate(
+                        **text_inputs,
+                        **generation_config
+                    )
+                    
+                    response_text = model.processor.decode(
+                        outputs[0],
+                        skip_special_tokens=True
+                    )
+                    
+                    # 如果是搜索查询格式，包装响应
+                    if has_search_format:
+                        response_text = f'{{ "text": "{response_text}" }}'
                 logger.info("文本请求处理完成")
             
             # 检查是否超时
