@@ -2,6 +2,36 @@
 
 基于 FastAPI 的多模态大语言模型服务框架，支持多线程并发处理和多种模型类型。
 
+## 快速开始
+
+```bash
+# 1. 安装 uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. 创建 Python 3.9.6 虚拟环境
+uv venv --python=python3.9.6
+source .venv/bin/activate  # Linux/MacOS
+# 或 .venv\Scripts\activate  # Windows
+
+# 3. 安装依赖
+uv pip install -r requirements.txt
+
+# 4. 下载模型（可选）
+uv run python -m tfmllmserv.download_model --model deepseek-ai/deepseek-vl2-small
+
+# 5. 启动服务
+# 设置环境变量
+export UV_HTTP_TIMEOUT=300
+export PYTORCH_ENABLE_MPS_FALLBACK=1  # 如果使用 Apple Silicon
+export CUDA_VISIBLE_DEVICES=0  # 如果使用 GPU
+
+# 启动服务
+uv run uvicorn tfmllmserv.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+# 或使用便捷脚本启动
+uv run python -m tfmllmserv.main
+```
+
 ## 功能特性
 
 - 多线程并发处理请求
@@ -22,143 +52,248 @@
 
 ## 系统要求
 
-- Python 3.10+
+- Python 版本要求：Python 3.9.6（固定版本）
+  - 为确保最佳兼容性，请严格使用 Python 3.9.6
+  - 此版本同时支持所有模型功能
 - CUDA 支持（推荐）
 - 8GB+ 内存
 - 10GB+ 磁盘空间
 
+### 依赖包
+
+主要依赖包括：
+
+1. 核心框架：
+```bash
+fastapi>=0.68.0      # Web API 框架
+uvicorn>=0.15.0      # ASGI 服务器
+pydantic>=1.8.0      # 数据验证
+```
+
+2. 机器学习相关：
+```bash
+torch>=2.0.0         # PyTorch
+torchvision          # 计算机视觉工具
+transformers>=4.30.0 # Hugging Face Transformers
+accelerate>=0.20.0   # 加速推理
+numpy>=1.24.0        # 数值计算
+```
+
+3. 多模态模型：
+```bash
+janus @ git+https://github.com/deepseek-ai/Janus.git        # Janus 模型
+deepseek-vl @ git+https://github.com/deepseek-ai/DeepSeek-VL.git  # DeepSeek VL 模型
+vllm>=0.2.0          # VLLM 推理引擎
+```
+
+4. 工具和优化：
+```bash
+pillow               # 图像处理
+sentencepiece>=0.1.99 # 分词器
+protobuf>=3.20.0     # 序列化
+einops>=0.6.1        # 张量操作
+psutil>=5.9.0        # 系统监控
+typer>=0.4.0         # CLI 工具
+rich>=10.0.0         # 终端美化
+python-dotenv>=0.19.0 # 环境变量管理
+```
+
+### 特殊依赖安装说明
+
+1. Janus 模型：
+```bash
+# 从 GitHub 安装
+uv pip install git+https://github.com/deepseek-ai/Janus.git
+```
+
+2. DeepSeek-VL 模型：
+```bash
+# 从 GitHub 安装
+uv pip install git+https://github.com/deepseek-ai/DeepSeek-VL.git
+```
+
+3. VLLM 加速引擎：
+```bash
+# 安装 VLLM
+uv pip install vllm>=0.2.0
+```
+
+### 性能监控
+
+使用 `psutil` 进行系统资源监控：
+
+1. 内存使用：
+```python
+import psutil
+# 获取内存使用情况
+memory_info = psutil.Process().memory_info()
+memory_percent = psutil.Process().memory_percent()
+```
+
+2. CPU 使用：
+```python
+# 获取 CPU 使用率
+cpu_percent = psutil.Process().cpu_percent()
+```
+
+3. GPU 监控：
+```python
+# 使用 NVIDIA-SMI（如果可用）
+gpu_memory = torch.cuda.memory_allocated()
+gpu_memory_cached = torch.cuda.memory_cached()
+```
+
+### 环境变量配置
+
+新增环境变量：
+```bash
+# VLLM 配置
+VLLM_MAX_WORKERS=4    # VLLM 最大工作线程数
+VLLM_GPU_MEMORY_UTILIZATION=0.9  # GPU 显存利用率
+
+# 系统监控
+MONITOR_INTERVAL=60   # 监控间隔（秒）
+MEMORY_THRESHOLD=0.9  # 内存使用阈值
+
+# 模型加载
+MODEL_LOAD_TIMEOUT=300  # 模型加载超时时间（秒）
+```
+
+### 性能优化
+
+1. VLLM 加速：
+- 使用 VLLM 进行高效推理
+- 支持 Continuous Batching
+- KV Cache 管理
+- 自动显存优化
+
+2. 系统监控：
+- 实时监控系统资源使用
+- 自动清理未使用的模型
+- 内存使用优化
+- 进程管理
+
+3. 并发处理：
+- 多线程请求处理
+- 异步模型加载
+- 动态资源分配
+
+### 注意事项
+
+1. VLLM 相关：
+- 需要 CUDA 11.8 及以上
+- 建议预留足够显存
+- 支持模型量化
+
+2. 系统资源：
+- 监控内存使用情况
+- 及时清理缓存
+- 合理设置并发数
+
+3. 依赖安装：
+- 建议按顺序安装依赖
+- Git 依赖可能需要特殊网络环境
+- 注意版本兼容性
+
 ## 安装
+
+### 1. 安装 uv
+
+```bash
+# 安装 uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 验证安装
+uv --version
+```
+
+### 2. 安装 Python 3.9.6
+
+```bash
+# 使用 uv pip 安装 python
+uv pip install python@3.9.6
+
+# 或者使用 uv venv 时自动安装
+uv venv --python=3.9.6
+
+# 在 macOS 上，如果上述方法不起作用，可以使用 pyenv：
+brew install pyenv
+pyenv install 3.9.6
+pyenv global 3.9.6
+```
+
+### 3. 创建项目环境
 
 ```bash
 # 克隆仓库
 git clone [repository_url]
 cd tfmllmserv
 
-# 安装 uv（如果未安装）
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 创建虚拟环境并安装依赖
-uv venv
+# 创建虚拟环境并指定 Python 版本
+uv venv --python=3.9.6
 source .venv/bin/activate  # Linux/MacOS
 # 或 .venv\Scripts\activate  # Windows
+
+# 验证 Python 版本
+python --version  # 应该显示 3.9.6
+
+# 安装依赖
 uv pip install -r requirements.txt
 ```
 
-### 依赖包
+### 4. 特殊情况处理
 
-主要依赖包括：
-```fastapi>=0.95.0
-uvicorn>=0.21.1
-pydantic>=2.0.0
-torch>=2.0.0
-transformers>=4.30.0
-pillow>=9.5.0
-numpy>=1.24.0
-janus>=1.0.0
+如果遇到 Python 版本安装问题：
+
+1. Windows 用户：
+```powershell
+# 使用 uv pip 安装
+uv pip install python@3.9.6
+
+# 或使用 Windows Store 安装 Python 3.9.6
+# 然后指定完整路径
+uv venv --python="C:\Users\<用户名>\AppData\Local\Programs\Python\Python39\python.exe"
 ```
 
-完整依赖见 `requirements.txt`
+2. Linux 用户：
+```bash
+# 使用系统包管理器
+sudo apt install python3.9  # Ubuntu/Debian
+sudo dnf install python39  # Fedora/RHEL
 
-### 模型预下载
+# 然后创建虚拟环境
+uv venv --python=python3.9
+```
 
-服务支持模型预下载功能，可以提前下载模型文件到本地，避免首次请求时的下载等待。
+3. macOS 用户：
+```bash
+# 使用 Homebrew
+brew install python@3.9
 
-#### 预下载脚本
+# 或使用 pyenv（推荐）
+brew install pyenv
+pyenv install 3.9.6
+pyenv global 3.9.6
+
+# 然后创建虚拟环境
+uv venv --python=3.9.6
+```
+
+### 5. 验证安装
 
 ```bash
-# 下载单个模型
-uv run python -m tfmllmserv.tools.download_model --model deepseek-ai/Janus-Pro-1B
+# 激活虚拟环境
+source .venv/bin/activate  # Linux/MacOS
+# 或 .venv\Scripts\activate  # Windows
 
-# 下载多个模型
-uv run python -m tfmllmserv.tools.download_model --model deepseek-ai/Janus-Pro-1B OpenGVLab/InternVL2-2B
+# 验证 Python 版本
+python --version  # 应该显示 3.9.6
 
-# 下载配置文件中的所有模型
-uv run python -m tfmllmserv.tools.download_model --all
+# 验证 uv
+uv --version
 
-# 指定下载目录
-uv run python -m tfmllmserv.tools.download_model --model deepseek-ai/Janus-Pro-1B --path /path/to/models
-
-# 使用特定设备下载（用于转换权重）
-uv run python -m tfmllmserv.tools.download_model --model deepseek-ai/Janus-Pro-1B --device cuda
-```
-
-#### 支持的模型
-
-目前支持以下模型的预下载：
-
-1. Janus 系列
-   - deepseek-ai/Janus-Pro-1B
-   - deepseek-ai/Janus-Pro-7B
-   - 存储需求：约 2GB/7GB
-
-2. InternVL 系列
-   - OpenGVLab/InternVL2-2B
-   - OpenGVLab/InternVL2-7B
-   - 存储需求：约 4GB/14GB
-
-#### 存储路径
-
-默认情况下，模型文件将下载到以下位置：
-```
-$HOME/.cache/huggingface/hub/  # 默认路径
-./models/                      # 指定 --path 时的相对路径
-/path/to/models/              # 指定 --path 时的绝对路径
-```
-
-#### 配置选项
-
-在 `download_config.json` 中可以配置下载选项：
-
-```json
-{
-  "default_path": "./models",          # 默认下载路径
-  "resume_download": true,             # 支持断点续传
-  "force_download": false,             # 强制重新下载
-  "proxies": {                         # 代理设置
-    "http": "http://proxy.example.com:8080",
-    "https": "http://proxy.example.com:8080"
-  },
-  "local_files_only": false,          # 仅使用本地文件
-  "token": "your_token"               # HuggingFace token（可选）
-}
-```
-
-#### 注意事项
-
-1. 存储空间
-   - 确保有足够的磁盘空间
-   - 预留约 20% 的额外空间用于模型加载
-
-2. 网络要求
-   - 稳定的网络连接
-   - 推荐使用代理加速下载
-   - 支持断点续传
-
-3. 权限要求
-   - 下载目录的写入权限
-   - HuggingFace token（私有模型需要）
-
-4. 其他说明
-   - 支持多进程下载加速
-   - 自动验证文件完整性
-   - 支持增量更新
-
-### 环境变量
-
-服务支持以下环境变量配置：
-```bash
-# 服务配置
-UV_HTTP_TIMEOUT=300        # HTTP 请求超时时间
-PORT=8000                 # 服务端口
-HOST=0.0.0.0             # 服务地址
-
-# GPU 配置
-CUDA_VISIBLE_DEVICES=0    # 使用的 GPU 设备
-PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32  # PyTorch 显存分配配置
-
-# 性能优化
-MAX_WORKERS=4            # 最大工作线程数
-MODEL_CACHE_SIZE=2       # 最大缓存模型数量
+# 验证依赖安装
+python -c "import torch; print(torch.__version__)"
 ```
 
 ## 配置
@@ -185,12 +320,83 @@ MODEL_CACHE_SIZE=2       # 最大缓存模型数量
 
 ## 启动服务
 
-```bash
-# 使用 uvicorn 启动
-UV_HTTP_TIMEOUT=300 uv run uvicorn tfmllmserv.main:app --host 0.0.0.0 --port 8000
+### 基本启动
 
-# 或使用提供的启动脚本
+```bash
+# 1. 激活虚拟环境（如果尚未激活）
+source .venv/bin/activate  # Linux/MacOS
+# 或 .venv\Scripts\activate  # Windows
+
+# 2. 设置环境变量
+export UV_HTTP_TIMEOUT=300
+export PYTORCH_ENABLE_MPS_FALLBACK=1  # 如果使用 Apple Silicon
+export CUDA_VISIBLE_DEVICES=0  # 如果使用 GPU
+
+# 3. 启动服务（使用 uvicorn）
+uv run uvicorn tfmllmserv.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+# 或使用便捷脚本启动
 uv run python -m tfmllmserv.main
+```
+
+### 开发模式启动
+
+```bash
+# 启用热重载（适用于开发）
+uv run uvicorn tfmllmserv.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 生产环境启动
+
+```bash
+# 使用 gunicorn 作为进程管理器（推荐用于生产环境）
+uv run gunicorn tfmllmserv.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+
+# 或使用 supervisor 管理（需要先安装 supervisor）
+uv run supervisord -c supervisor.conf
+```
+
+### 环境变量设置
+
+Windows PowerShell:
+```powershell
+$env:UV_HTTP_TIMEOUT=300
+$env:PYTORCH_ENABLE_MPS_FALLBACK=1  # 如果使用 Apple Silicon
+$env:CUDA_VISIBLE_DEVICES=0  # 如果使用 GPU
+```
+
+Windows CMD:
+```cmd
+set UV_HTTP_TIMEOUT=300
+set PYTORCH_ENABLE_MPS_FALLBACK=1
+set CUDA_VISIBLE_DEVICES=0
+```
+
+Linux/MacOS:
+```bash
+export UV_HTTP_TIMEOUT=300
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+export CUDA_VISIBLE_DEVICES=0
+```
+
+### 性能调优参数
+
+```bash
+# 调整工作进程数（建议设置为 CPU 核心数）
+--workers 4
+
+# 调整每个工作进程的线程数
+--worker-connections 1000
+
+# 调整请求超时时间（秒）
+export UV_HTTP_TIMEOUT=300
+
+# 调整 PyTorch 显存分配
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32
+
+# 限制 GPU 显存使用
+export CUDA_VISIBLE_DEVICES=0,1  # 使用指定的 GPU
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32  # 限制单次分配大小
 ```
 
 ## API 接口
@@ -287,6 +493,15 @@ uv run python -m tfmllmserv.main
 - 文本生成：支持中英双语的文本生成和对话
 - 图像分析：支持场景识别、物体检测、文字识别
 
+#### DeepSeek-VL2 系列
+- 图文理解：支持高精度的图像理解和描述
+- 视觉定位：支持精确的视觉引用和定位
+- 多图对话：支持多图上下文学习和推理
+- 特点：
+  - 动态分块策略：<=2张图片时使用动态分块，>=3张图片时使用384*384固定大小
+  - 推荐温度参数：T <= 0.7（更高温度会降低生成质量）
+  - 三种型号：Tiny、Small、Base（基于不同规模的基础LLM）
+
 #### InternVL 系列
 - 图像描述：生成详细的图像描述
 - 视觉问答：回答关于图像的具体问题
@@ -300,6 +515,8 @@ uv run python -m tfmllmserv.main
 ```python
 import requests
 import base64
+from PIL import Image
+import io
 
 def encode_image(image_path):
     with open(image_path, "rb") as f:
@@ -309,6 +526,7 @@ def encode_image(image_path):
 image_base64 = encode_image("example.jpg")
 url = "http://localhost:8000/v1/chat/completions"
 
+# DeepSeek-VL2 示例 - 视觉定位
 payload = {
     "messages": [
         {
@@ -316,7 +534,7 @@ payload = {
             "content": [
                 {
                     "type": "text",
-                    "text": "描述这张图片"
+                    "text": "<image>\n<|ref|>图片中的长颈鹿<|/ref|>"
                 },
                 {
                     "type": "image_url",
@@ -327,12 +545,42 @@ payload = {
             ]
         }
     ],
-    "model": "deepseek-ai/Janus-Pro-1B",
-    "temperature": 0.7
+    "model": "deepseek-ai/deepseek-vl2-small",
+    "temperature": 0.7,
+    "max_tokens": 512
 }
 
 # 发送请求
 response = requests.post(url, json=payload)
+print(response.json())
+
+# DeepSeek-VL2 示例 - 多图对话
+images = ["dog_a.jpg", "dog_b.jpg", "dog_c.jpg", "dog_d.jpg"]
+image_contents = []
+
+for img_path in images:
+    image_base64 = encode_image(img_path)
+    image_contents.append({
+        "type": "image_url",
+        "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
+    })
+
+payload_multi = {
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "第一张图片中的狗没有穿衣服，第二张图片中的狗戴着圣诞帽，第三张图片中的狗穿着魔法师服装。第四张图片中的狗穿着什么？"},
+                *image_contents
+            ]
+        }
+    ],
+    "model": "deepseek-ai/deepseek-vl2-small",
+    "temperature": 0.7,
+    "max_tokens": 512
+}
+
+response = requests.post(url, json=payload_multi)
 print(response.json())
 ```
 
@@ -440,6 +688,18 @@ CRITICAL: 需要立即处理的严重问题
 - CPU 使用率
 - 并发请求数
 - 错误率统计
+
+### 模型特定说明
+
+1. DeepSeek-VL2 系列
+   - 推荐使用温度参数 T <= 0.7
+   - 图片处理策略：
+     - 1-2张图片：使用动态分块
+     - 3张及以上：统一缩放到384*384
+   - 型号选择：
+     - Tiny：轻量级应用
+     - Small：平衡性能和资源
+     - Base：最佳效果但需要更多资源
 
 ## 已知问题
 

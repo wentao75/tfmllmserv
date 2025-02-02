@@ -139,6 +139,30 @@ class ModelManager:
                         device_map=device,
                         local_files_only=True
                     )
+                    
+                    # 为不同类型的模型添加处理器
+                    if "Qwen" in model_id:
+                        try:
+                            logger.info(f"正在加载 Qwen tokenizer: {model_id}")
+                            tokenizer = AutoTokenizer.from_pretrained(
+                                model_id,
+                                trust_remote_code=True,
+                                local_files_only=True,
+                                use_fast=False  # 使用慢速 tokenizer 以提高兼容性
+                            )
+                            model.tokenizer = tokenizer
+                            model.processor = tokenizer  # 为了保持接口一致
+                            logger.info("Qwen tokenizer 加载成功")
+                        except Exception as e:
+                            logger.error(f"加载 Qwen tokenizer 失败: {str(e)}")
+                            raise
+                    else:
+                        processor = AutoProcessor.from_pretrained(
+                            self.models[model_id]["model_id"],
+                            trust_remote_code=True,
+                            local_files_only=True
+                        )
+                        model.processor = processor
                 
                 self.loaded_models[model_id] = model
                 logger.info(f"模型加载完成: {model_id}")

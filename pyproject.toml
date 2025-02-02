@@ -2,7 +2,7 @@
 name = "tfmllmserv"
 version = "0.1.0"
 description = "Transformer-based LLM Service"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 authors = [
     {name = "Wen Tao", email = "software.wentao@gmail.com"}
 ]

@@ -214,7 +214,7 @@ async def process_request(request: ChatRequest) -> ChatResponse:
             images.extend(last_msg_processed["images"])
         
         # 设置处理超时
-        timeout = 30  # 30秒超时
+        timeout = 300  # 30秒超时
         current_time = time.time()
         
         # 如果不是特殊格式，加载模型处理请求
